@@ -52,8 +52,20 @@ const isHeading = line =>
   /^#{1,6}\s/.test(line) ||
   (line.length <= 60 && /^[A-ZÀ-Ý0-9 /&().-]{4,}:?$/.test(line) && /[A-ZÀ-Ý]{3}/.test(line));
 
+// Primeiro ":" fora de parênteses ("Apelido (ex.: quem criou?): Não" -> rótulo inteiro)
+const topLevelColon = text => {
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    else if (ch === ':' && depth === 0) return i;
+  }
+  return -1;
+};
+
 const splitLabel = text => {
-  const i = text.indexOf(':');
+  const i = topLevelColon(text);
   if (i > 0 && i < 160) return { label: text.slice(0, i).trim(), value: text.slice(i + 1).trim() };
   const q = text.indexOf('?');
   if (q > 0) return { label: text.slice(0, q + 1).trim(), value: text.slice(q + 1).trim() };
