@@ -3,7 +3,7 @@ import Cropper from 'react-easy-crop'
 import {
   Heart, Skull, EnvelopeSimple, Camera, SignOut, Trophy, ListChecks, Eye, EyeSlash,
   FloppyDisk, X, Check, MagnifyingGlassMinus, MagnifyingGlassPlus, Clock, LockSimple, Medal,
-  Plus, Trash, UserCircle,
+  Plus, Trash, UserCircle, PencilSimple,
 } from '@phosphor-icons/react'
 import { CAST } from './cast.js'
 import { supabase, configured } from './supabase.js'
@@ -255,7 +255,8 @@ function AddModal({ onCancel, onSave }) {
 
 /* ---------- apostas ---------- */
 
-function Bets({ session, config, locked, admin, toast }) {
+function Bets({ session, config, locked, admin: isAdmin, editing, toast }) {
+  const admin = isAdmin && editing
   const uid = session.user.id
   const [picks, setPicks] = useState({})
   const [savedPicks, setSavedPicks] = useState({})
@@ -490,6 +491,7 @@ export default function App() {
   const [admin, setAdmin] = useState(false)
   const [name, setName] = useState(null)
   const [editName, setEditName] = useState(false)
+  const [editing, setEditing] = useState(false)
   const [toast, toastNode] = useToast()
   const uid = session?.user?.id
   const closed = useClosed(config?.deadline)
@@ -532,10 +534,15 @@ export default function App() {
           <button role="tab" aria-selected={tab === 'bets'} onClick={() => setTab('bets')}><ListChecks size={20} /> Aposta</button>
           <button role="tab" aria-selected={tab === 'rank'} onClick={() => setTab('rank')}><Trophy size={20} /> Ranking</button>
         </nav>
+        {admin && tab === 'bets' && (
+          <button className={`icon edit ${editing ? 'on' : ''}`} aria-pressed={editing} title={editing ? 'Sair da edição' : 'Editar personagens'} aria-label={editing ? 'Sair da edição' : 'Editar personagens'} onClick={() => setEditing(!editing)}>
+            {editing ? <Check size={24} weight="bold" /> : <PencilSimple size={24} />}
+          </button>
+        )}
         <button className="icon me" title="Seu nome" aria-label={`Seu nome: ${name ?? ''}`} onClick={() => setEditName(true)}><UserCircle size={26} /></button>
         <button className="icon" title="Sair" aria-label="Sair" onClick={() => supabase.auth.signOut()}><SignOut size={24} /></button>
       </header>
-      {tab === 'bets' ? <Bets session={session} config={config} locked={closed} admin={admin} toast={toast} /> : <Ranking config={config} open={closed} uid={uid} />}
+      {tab === 'bets' ? <Bets session={session} config={config} locked={closed} admin={admin} editing={editing} toast={toast} /> : <Ranking config={config} open={closed} uid={uid} />}
       {(needName || editName) && (
         <NameModal
           initial={session.user.user_metadata?.name ?? (name && name !== session.user.email.split('@')[0] ? name : '')}
