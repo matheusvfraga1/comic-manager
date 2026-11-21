@@ -28,6 +28,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - run: npm ci && npm run build
+        working-directory: bolao-doomsday
+      - run: mkdir -p dist/bolao && cp -r bolao-doomsday/dist/. dist/bolao/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

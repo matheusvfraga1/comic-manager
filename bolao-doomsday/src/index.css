@@ -1,0 +1,23 @@
+:root{--bg:#0b0f0c;--card:#141a16;--line:#243028;--fg:#e6ece7;--mute:#8a9a8f;--green:#39ff6a;--red:#ff4d4d}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(#16231a,#0b0f0c 70%) fixed;color:var(--fg);font-family:system-ui,sans-serif}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:8px;padding:8px 12px}
+button:disabled{opacity:.5;cursor:default}
+.primary{background:var(--green);color:#04120a;border:0;font-weight:700}
+.link{background:none;border:0;color:var(--mute);text-decoration:underline}
+input{width:100%;padding:10px;margin:6px 0;border-radius:8px;border:1px solid var(--line);background:#0e1410;color:var(--fg);font:inherit}
+.card.login{max-width:340px;margin:8vh auto;padding:24px;text-align:center;background:var(--card);border:1px solid var(--line);border-radius:14px}
+.logo{width:100%;border-radius:10px}.msg{color:var(--mute);font-size:.85rem}
+.app{max-width:1100px;margin:0 auto;padding:12px 12px 90px}
+header{display:flex;align-items:center;gap:12px}header img{width:48px;height:48px;border-radius:8px;object-fit:cover}
+nav{flex:1;display:flex;gap:6px}nav .on{border-color:var(--green);color:var(--green)}
+.hint{color:var(--mute)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.char{background:var(--card);border:2px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.char.vive{border-color:var(--green)}.char.morre{border-color:var(--red)}
+.char img{width:100%;aspect-ratio:3/4;object-fit:cover;object-position:top;background:#000}
+.info{padding:6px 8px;display:flex;flex-direction:column}.info small{color:var(--mute)}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:6px}.btns button{padding:6px 2px;font-size:.85rem}
+.btns .live.on{background:var(--green);color:#04120a}.btns .die.on{background:var(--red);color:#fff}
+.bar{position:fixed;left:0;right:0;bottom:0;display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 16px;background:#0b0f0ce6;border-top:1px solid var(--line);backdrop-filter:blur(6px)}
+.rank{width:100%;border-collapse:collapse}.rank td,.rank th{padding:8px;border-bottom:1px solid var(--line);text-align:left}
+.mail{color:var(--green);text-decoration:none;white-space:nowrap}
