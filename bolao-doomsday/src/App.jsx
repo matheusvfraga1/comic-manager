@@ -90,7 +90,7 @@ function Bets({ session, config }) {
   return (
     <>
       <p className="hint">
-        {locked ? 'Apostas encerradas.' : `Escolha quantos quiser. Prazo: ${new Date(config.deadline).toLocaleString('pt-BR')}.`} Personagens sem destino confirmado não contam.
+        {locked ? 'Apostas encerradas.' : `Escolha quantos quiser.${config ? ` Prazo: ${new Date(config.deadline).toLocaleString('pt-BR')}.` : ''}`} Personagens sem destino confirmado não contam.
       </p>
       <div className="grid">
         {CAST.map((c) => (
