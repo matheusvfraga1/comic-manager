@@ -144,3 +144,11 @@ label.upload { position: absolute; right: 8px; bottom: 8px; width: 44px; padding
 .vb-labels { display: flex; justify-content: space-between; font-size: .75rem; font-weight: 700; margin-top: 2px; text-shadow: 0 1px 2px #000 }
 .vb-labels span:first-child { color: var(--green) } .vb-labels span:last-child { color: var(--red) }
 .char:has(.votebar) label.upload { bottom: 40px }
+
+/* admin: personagens */
+button.remove { position: absolute; right: 8px; top: 8px; width: 40px; min-height: 40px; padding: 0; border-radius: 50%; background: #000b; color: var(--red); border-color: var(--red) }
+.nophoto { position: absolute; inset: 0; margin: auto; color: var(--mute) }
+.addchar { flex-direction: column; justify-content: center; gap: 10px; min-height: 260px; border-style: dashed; color: var(--green); background: transparent; font-weight: 700; padding: 16px; text-align: center }
+.modal.center { background: #000c; align-items: center; justify-content: center; padding: 16px }
+.modal .panel h1 { font-size: 1.3rem }
+.cropactions.bare { padding: 0 }
