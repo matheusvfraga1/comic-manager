@@ -20,6 +20,7 @@ export const CAST = [
   ['mbaku', "M'Baku", 'Winston Duke'],
   ['namor', 'Namor', 'Tenoch Huerta'],
   ['namora', 'Namora', 'Mabel Cadena'],
+  ['wanda', 'Feiticeira Escarlate', 'Elizabeth Olsen'],
   ['shangchi', 'Shang-Chi', 'Simu Liu'],
   ['yelena', 'Yelena Belova', 'Florence Pugh'],
   ['redguardian', 'Guardião Vermelho', 'David Harbour'],
