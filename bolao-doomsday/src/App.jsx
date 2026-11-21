@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { CAST } from './cast.js'
 import { supabase, configured } from './supabase.js'
 
-const photo = (id) => `${import.meta.env.BASE_URL}cast/${id}.jpg`
+const photo = (id) => `${import.meta.env.BASE_URL}cast/${id}.jpg?v=2`
 const logo = `${import.meta.env.BASE_URL}logo.jpg`
 
 function Login({ recovery, onDone }) {
