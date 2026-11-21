@@ -5,7 +5,7 @@ import { supabase, configured } from './supabase.js'
 const photo = (id) => `${import.meta.env.BASE_URL}cast/${id}.jpg`
 const logo = `${import.meta.env.BASE_URL}logo.jpg`
 
-function Login({ recovery }) {
+function Login({ recovery, onDone }) {
   const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')
   const [show, setShow] = useState(false)
@@ -20,7 +20,8 @@ function Login({ recovery }) {
     }
     if (mode === 'new') {
       const { error } = await supabase.auth.updateUser({ password: pass })
-      return setMsg(error ? error.message : 'Senha alterada!')
+      if (error) return setMsg(error.message)
+      return onDone()
     }
     if (mode === 'up') {
       const { data, error } = await supabase.auth.signUp({ email, password: pass })
@@ -58,7 +59,7 @@ function Login({ recovery }) {
 function Bets({ session, config }) {
   const uid = session.user.id
   const [picks, setPicks] = useState({})
-  const [saved, setSaved] = useState(false)
+  const [savedPicks, setSavedPicks] = useState({})
   const [status, setStatus] = useState('')
   const locked = config && new Date() >= new Date(config.deadline)
 
@@ -67,23 +68,36 @@ function Bets({ session, config }) {
       const p = {}
       ;(data ?? []).forEach((b) => (p[b.character_id] = b.outcome))
       setPicks(p)
-      setSaved(Object.keys(p).length > 0)
+      setSavedPicks(p)
     })
   }, [uid])
 
   const done = Object.keys(picks).length
+  const saved = Object.keys(savedPicks).length > 0
+  const dirty = JSON.stringify(Object.entries(picks).sort()) !== JSON.stringify(Object.entries(savedPicks).sort())
   const body = CAST.filter((c) => picks[c.id]).map((c) => `${picks[c.id] === 'vive' ? 'VIVE ' : 'MORRE'} - ${c.name} (${c.actor})`).join('\n')
   const mailto = `mailto:${session.user.email}?subject=${encodeURIComponent('Minha aposta - Bolão Doomsday')}&body=${encodeURIComponent(body)}`
-  const set = (id, v) => !locked && setPicks((p) => ({ ...p, [id]: p[id] === v ? undefined : v }))
+  const set = (id, v) => !locked && setPicks((p) => {
+    const n = { ...p }
+    if (n[id] === v) delete n[id]
+    else n[id] = v
+    return n
+  })
 
   async function save() {
     setStatus('Salvando...')
-    const rows = Object.entries(picks).filter(([, v]) => v).map(([character_id, outcome]) => ({ user_id: uid, character_id, outcome }))
-    const del = await supabase.from('bets').delete().eq('user_id', uid)
-    if (del.error) return setStatus(del.error.message)
-    const ins = await supabase.from('bets').insert(rows)
-    if (ins.error) return setStatus(ins.error.message)
-    setSaved(true)
+    // só mexe no que mudou, para não perder apostas se algo falhar no meio
+    const changed = Object.keys(savedPicks).filter((id) => picks[id] !== savedPicks[id])
+    if (changed.length) {
+      const del = await supabase.from('bets').delete().eq('user_id', uid).in('character_id', changed)
+      if (del.error) return setStatus('Erro: ' + del.error.message)
+    }
+    const rows = Object.entries(picks).filter(([id, v]) => savedPicks[id] !== v).map(([character_id, outcome]) => ({ user_id: uid, character_id, outcome }))
+    if (rows.length) {
+      const ins = await supabase.from('bets').insert(rows)
+      if (ins.error) return setStatus('Erro: ' + ins.error.message + ' Tente salvar de novo.')
+    }
+    setSavedPicks({ ...picks })
     setStatus('Aposta salva. Use "Enviar cópia por e-mail" abaixo.')
   }
 
@@ -105,10 +119,10 @@ function Bets({ session, config }) {
         ))}
       </div>
       <div className="bar">
-        <span>{done}/{CAST.length} apostas {saved && '· salvo'}</span>
+        <span>{done}/{CAST.length} apostas {dirty ? '· não salvo' : saved ? '· salvo' : ''}</span>
         <span className="msg">{status}</span>
-        {saved && <a className="mail" href={mailto}>✉ Enviar cópia por e-mail</a>}
-        {!locked && <button className="primary" onClick={save} disabled={!done}>Salvar aposta</button>}
+        {saved && !dirty && <a className="mail" href={mailto}>✉ Enviar cópia por e-mail</a>}
+        {!locked && <button className="primary" onClick={save} disabled={!dirty}>Salvar aposta</button>}
       </div>
     </>
   )
@@ -157,11 +171,11 @@ export default function App() {
   }, [])
   useEffect(() => {
     if (session) supabase.from('config').select('deadline').single().then(({ data }) => setConfig(data))
-  }, [session])
+  }, [session?.user?.id])
 
   if (!configured) return <div className="card login"><h1>Configure o Supabase</h1><p>Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.</p></div>
   if (session === undefined) return null
-  if (!session || recovery) return <Login recovery={recovery} />
+  if (!session || recovery) return <Login recovery={recovery} onDone={() => setRecovery(false)} />
   return (
     <div className="app">
       <header>
