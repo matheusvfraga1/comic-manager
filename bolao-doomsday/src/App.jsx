@@ -26,6 +26,18 @@ function useToast() {
   return [show, node]
 }
 
+function VoteBar({ vive, morre }) {
+  const total = vive + morre
+  if (!total) return null
+  const pv = Math.round((vive / total) * 100)
+  return (
+    <div className="votebar" title={`${vive} vive · ${morre} morre`} aria-label={`${pv}% acham que vive, ${100 - pv}% que morre`}>
+      <div className="vb-track"><div className="vb-live" style={{ width: `${pv}%` }} /></div>
+      <div className="vb-labels"><span>{pv}%</span><span>{100 - pv}%</span></div>
+    </div>
+  )
+}
+
 function Countdown({ deadline }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -176,6 +188,7 @@ function Bets({ session, config, admin, toast }) {
   const [saving, setSaving] = useState(false)
   const [custom, setCustom] = useState(() => { try { return JSON.parse(localStorage.getItem('photos')) } catch { return null } })
   const [cropping, setCropping] = useState(null)
+  const [stats, setStats] = useState({})
   const locked = config && new Date() >= new Date(config.deadline)
 
   useEffect(() => {
@@ -184,6 +197,7 @@ function Bets({ session, config, admin, toast }) {
       const p = Object.fromEntries((data ?? []).map((b) => [b.character_id, b.outcome]))
       setPicks(p); setSavedPicks(p); setLoaded(true)
     })
+    loadStats()
     supabase.from('photos').select('character_id,path').then(({ data, error }) => {
       if (error) return setCustom((c) => c ?? {})
       const m = Object.fromEntries((data ?? []).map((p) => [p.character_id, p.path]))
@@ -191,6 +205,11 @@ function Bets({ session, config, admin, toast }) {
       try { localStorage.setItem('photos', JSON.stringify(m)) } catch { /* sem armazenamento */ }
     })
   }, [uid, toast])
+
+  async function loadStats() {
+    const { data } = await supabase.rpc('vote_stats')
+    setStats(Object.fromEntries((data ?? []).map((r) => [r.character_id, r])))
+  }
 
   const done = Object.keys(picks).length
   const saved = Object.keys(savedPicks).length > 0
@@ -225,6 +244,7 @@ function Bets({ session, config, admin, toast }) {
         if (ins.error) return toast('Erro ao salvar. Tente de novo.', 'err')
       }
       setSavedPicks({ ...picks })
+      loadStats()
       toast('Aposta salva.')
     } finally { setSaving(false) }
   }
@@ -261,6 +281,7 @@ function Bets({ session, config, admin, toast }) {
               <div className="photo">
                 {custom && <img src={photo(c.id, custom[c.id])} alt="" loading="lazy" />}
                 {v && <span className={`badge ${v}`} aria-hidden>{v === 'vive' ? <Heart size={18} weight="fill" /> : <Skull size={18} weight="fill" />}</span>}
+                {stats[c.id] && <VoteBar {...stats[c.id]} />}
                 {admin && (
                   <label className="upload" title="Trocar foto" aria-label={`Trocar foto de ${c.name}`}>
                     <Camera size={22} weight="bold" />
