@@ -156,3 +156,15 @@ button.remove { position: absolute; right: 8px; top: 8px; width: 40px; min-heigh
 .top > .icon.edit { margin-left: auto }
 .top > .icon.edit ~ .icon { margin-left: 0 }
 .icon.edit.on { color: #04130a; background: var(--green); border-radius: 50% }
+/* celular: topo cabe na tela */
+.tabs { min-width: 0 }
+.tabs button { min-width: 0; padding: 0 6px; white-space: nowrap }
+.top > .icon { flex: none }
+.app { overflow-x: clip }
+@media (max-width: 440px) {
+  .top { gap: 6px }
+  .top img { width: 36px; height: 36px }
+  .top > .icon { width: 38px }
+  .tabs button svg { display: none }
+  .tabs button { font-size: .9rem; padding: 0 4px }
+}
