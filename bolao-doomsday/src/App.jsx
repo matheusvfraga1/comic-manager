@@ -51,6 +51,8 @@ function Bets({ session, config }) {
   }, [uid])
 
   const done = Object.keys(picks).length
+  const body = CAST.filter((c) => picks[c.id]).map((c) => `${picks[c.id] === 'vive' ? 'VIVE ' : 'MORRE'} - ${c.name} (${c.actor})`).join('\n')
+  const mailto = `mailto:${session.user.email}?subject=${encodeURIComponent('Minha aposta - Bolão Doomsday')}&body=${encodeURIComponent(body)}`
   const set = (id, v) => !locked && setPicks((p) => ({ ...p, [id]: p[id] === v ? undefined : v }))
 
   async function save() {
@@ -61,8 +63,7 @@ function Bets({ session, config }) {
     const ins = await supabase.from('bets').insert(rows)
     if (ins.error) return setStatus(ins.error.message)
     setSaved(true)
-    const mail = await supabase.functions.invoke('send-bet-email')
-    setStatus(mail.error ? 'Aposta salva. (E-mail não enviado: ' + mail.error.message + ')' : 'Aposta salva e cópia enviada para seu e-mail.')
+    setStatus('Aposta salva. Use "Enviar cópia por e-mail" abaixo.')
   }
 
   return (
@@ -85,6 +86,7 @@ function Bets({ session, config }) {
       <div className="bar">
         <span>{done}/{CAST.length} apostas {saved && '· salvo'}</span>
         <span className="msg">{status}</span>
+        {saved && <a className="mail" href={mailto}>✉ Enviar cópia por e-mail</a>}
         {!locked && <button className="primary" onClick={save} disabled={!done}>Salvar aposta</button>}
       </div>
     </>
