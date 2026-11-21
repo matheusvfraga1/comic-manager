@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Heart, Skull, EnvelopeSimple, Camera, SignOut, Trophy, ListChecks, Eye, EyeSlash, FloppyDisk } from '@phosphor-icons/react'
 import { CAST } from './cast.js'
 import { supabase, configured } from './supabase.js'
 
-const photo = (id) => `${import.meta.env.BASE_URL}cast/${id}.jpg?v=2`
+const photo = (id, custom) => custom
+  ? supabase.storage.from('cast').getPublicUrl(custom).data.publicUrl
+  : `${import.meta.env.BASE_URL}cast/${id}.jpg?v=2`
 const logo = `${import.meta.env.BASE_URL}logo.jpg`
 
 function Login({ recovery, onDone }) {
@@ -41,7 +44,7 @@ function Login({ recovery, onDone }) {
       {mode !== 'forgot' && (
         <div className="passwrap">
           <input type={show ? 'text' : 'password'} placeholder={mode === 'new' ? 'nova senha (mín. 6)' : 'senha (mín. 6)'} minLength={6} value={pass} onChange={(e) => setPass(e.target.value)} required />
-          <button type="button" className="eye" onClick={() => setShow(!show)}>{show ? 'Ocultar' : 'Ver'}</button>
+          <button type="button" className="eye" aria-label={show ? 'Ocultar senha' : 'Ver senha'} onClick={() => setShow(!show)}>{show ? <EyeSlash size={20} /> : <Eye size={20} />}</button>
         </div>
       )}
       <button className="primary">{titles[mode]}</button>
@@ -56,11 +59,30 @@ function Login({ recovery, onDone }) {
   )
 }
 
-function Bets({ session, config }) {
+function Bets({ session, config, admin }) {
   const uid = session.user.id
   const [picks, setPicks] = useState({})
   const [savedPicks, setSavedPicks] = useState({})
   const [status, setStatus] = useState('')
+  const [custom, setCustom] = useState({})
+
+  useEffect(() => {
+    supabase.from('photos').select('character_id,path').then(({ data }) =>
+      setCustom(Object.fromEntries((data ?? []).map((p) => [p.character_id, p.path]))))
+  }, [])
+
+  async function upload(id, file) {
+    if (!file) return
+    setStatus('Enviando foto...')
+    const path = `${id}-${Date.now()}.${(file.name.split('.').pop() || 'jpg').toLowerCase()}`
+    const up = await supabase.storage.from('cast').upload(path, file, { contentType: file.type })
+    if (up.error) return setStatus('Erro: ' + up.error.message)
+    const row = await supabase.from('photos').upsert({ character_id: id, path, updated_at: new Date().toISOString() })
+    if (row.error) return setStatus('Erro: ' + row.error.message)
+    if (custom[id]) supabase.storage.from('cast').remove([custom[id]])
+    setCustom((c) => ({ ...c, [id]: path }))
+    setStatus('Foto atualizada.')
+  }
   const locked = config && new Date() >= new Date(config.deadline)
 
   useEffect(() => {
@@ -109,11 +131,19 @@ function Bets({ session, config }) {
       <div className="grid">
         {CAST.map((c) => (
           <div key={c.id} className={`char ${picks[c.id] ?? ''}`}>
-            <img src={photo(c.id)} alt={c.name} loading="lazy" />
+            <div className="photo">
+              <img src={photo(c.id, custom[c.id])} alt={c.name} loading="lazy" />
+              {admin && (
+                <label className="upload" title="Trocar foto">
+                  <Camera size={20} weight="bold" />
+                  <input type="file" accept="image/*" hidden onChange={(e) => { upload(c.id, e.target.files[0]); e.target.value = '' }} />
+                </label>
+              )}
+            </div>
             <div className="info"><b>{c.name}</b><small>{c.actor}</small></div>
             <div className="btns">
-              <button disabled={locked} className={picks[c.id] === 'vive' ? 'on live' : ''} onClick={() => set(c.id, 'vive')}>❤ Vive</button>
-              <button disabled={locked} className={picks[c.id] === 'morre' ? 'on die' : ''} onClick={() => set(c.id, 'morre')}>☠ Morre</button>
+              <button disabled={locked} className={picks[c.id] === 'vive' ? 'on live' : ''} onClick={() => set(c.id, 'vive')}><Heart size={18} weight="fill" /> Vive</button>
+              <button disabled={locked} className={picks[c.id] === 'morre' ? 'on die' : ''} onClick={() => set(c.id, 'morre')}><Skull size={18} weight="fill" /> Morre</button>
             </div>
           </div>
         ))}
@@ -121,8 +151,8 @@ function Bets({ session, config }) {
       <div className="bar">
         <span>{done}/{CAST.length} apostas {dirty ? '· não salvo' : saved ? '· salvo' : ''}</span>
         <span className="msg">{status}</span>
-        {saved && !dirty && <a className="mail" href={mailto}>✉ Enviar cópia por e-mail</a>}
-        {!locked && <button className="primary" onClick={save} disabled={!dirty}>Salvar aposta</button>}
+        {saved && !dirty && <a className="mail" href={mailto} title="Enviar cópia por e-mail"><EnvelopeSimple size={22} /> Cópia</a>}
+        {!locked && <button className="primary" onClick={save} disabled={!dirty}><FloppyDisk size={18} weight="bold" /> Salvar</button>}
       </div>
     </>
   )
@@ -163,6 +193,7 @@ export default function App() {
   const [config, setConfig] = useState(null)
   const [tab, setTab] = useState('bets')
   const [recovery, setRecovery] = useState(false)
+  const [admin, setAdmin] = useState(false)
   useEffect(() => {
     if (!configured) return
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -171,6 +202,7 @@ export default function App() {
   }, [])
   useEffect(() => {
     if (session) supabase.from('config').select('deadline').single().then(({ data }) => setConfig(data))
+    if (session) supabase.from('admins').select('user_id').eq('user_id', session.user.id).then(({ data }) => setAdmin(Boolean(data?.length)))
   }, [session?.user?.id])
 
   if (!configured) return <div className="card login"><h1>Configure o Supabase</h1><p>Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.</p></div>
@@ -181,12 +213,12 @@ export default function App() {
       <header>
         <img src={logo} alt="" />
         <nav>
-          <button className={tab === 'bets' ? 'on' : ''} onClick={() => setTab('bets')}>Minha aposta</button>
-          <button className={tab === 'rank' ? 'on' : ''} onClick={() => setTab('rank')}>Ranking</button>
+          <button className={tab === 'bets' ? 'on' : ''} onClick={() => setTab('bets')}><ListChecks size={18} /> Aposta</button>
+          <button className={tab === 'rank' ? 'on' : ''} onClick={() => setTab('rank')}><Trophy size={18} /> Ranking</button>
         </nav>
-        <button className="link" onClick={() => supabase.auth.signOut()}>Sair</button>
+        <button className="icon" title="Sair" aria-label="Sair" onClick={() => supabase.auth.signOut()}><SignOut size={22} /></button>
       </header>
-      {tab === 'bets' ? <Bets session={session} config={config} /> : <Ranking config={config} />}
+      {tab === 'bets' ? <Bets session={session} config={config} admin={admin} /> : <Ranking config={config} />}
     </div>
   )
 }

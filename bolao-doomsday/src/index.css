@@ -22,3 +22,8 @@ nav{flex:1;display:flex;gap:6px}nav .on{border-color:var(--green);color:var(--gr
 .rank{width:100%;border-collapse:collapse}.rank td,.rank th{padding:8px;border-bottom:1px solid var(--line);text-align:left}
 .mail{color:var(--green);text-decoration:none;white-space:nowrap}
 .passwrap{position:relative}.passwrap input{padding-right:64px}.eye{position:absolute;right:6px;top:10px;padding:4px 8px;font-size:.8rem}
+button,.mail{display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.icon{background:none;border:0;color:var(--mute);padding:6px}
+.photo{position:relative}
+.upload{position:absolute;right:6px;bottom:6px;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#000a;color:var(--green);border:1px solid var(--green);cursor:pointer}
+.eye{color:var(--mute)}
