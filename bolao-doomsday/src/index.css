@@ -136,5 +136,11 @@ label.upload { position: absolute; right: 8px; bottom: 8px; width: 44px; padding
 @keyframes up { from { opacity: 0; transform: translate(-50%, 8px) } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }
 .countdown { display: inline-flex; gap: 6px; font-variant-numeric: tabular-nums }
-.countdown > span { display: inline-flex; align-items: baseline; gap: 1px; padding: 2px 6px; border-radius: 6px; background: var(--green-d) }
+.countdown > span { display: inline-flex; align-items: baseline; gap: 1px }
 .countdown b { font-size: 1.05rem } .countdown small { font-size: .7rem; opacity: .8 }
+.votebar { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 8px 6px; background: linear-gradient(transparent, #000c); pointer-events: none }
+.vb-track { height: 6px; border-radius: 3px; background: var(--red); overflow: hidden }
+.vb-live { height: 100%; background: var(--green) }
+.vb-labels { display: flex; justify-content: space-between; font-size: .75rem; font-weight: 700; margin-top: 2px; text-shadow: 0 1px 2px #000 }
+.vb-labels span:first-child { color: var(--green) } .vb-labels span:last-child { color: var(--red) }
+.char:has(.votebar) label.upload { bottom: 40px }
