@@ -153,3 +153,6 @@ button.remove { position: absolute; right: 8px; top: 8px; width: 40px; min-heigh
 .modal .panel h1 { font-size: 1.3rem }
 .cropactions.bare { padding: 0 }
 .top > .icon.me ~ .icon { margin-left: 0 }
+.top > .icon.edit { margin-left: auto }
+.top > .icon.edit ~ .icon { margin-left: 0 }
+.icon.edit.on { color: #04130a; background: var(--green); border-radius: 50% }
