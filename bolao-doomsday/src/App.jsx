@@ -26,11 +26,20 @@ function useToast() {
   return [show, node]
 }
 
-function timeLeft(deadline) {
-  const ms = new Date(deadline) - Date.now()
-  if (ms <= 0) return null
-  const d = Math.floor(ms / 864e5), h = Math.floor(ms / 36e5) % 24, m = Math.floor(ms / 6e4) % 60
-  return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}min` : `${m}min`
+function Countdown({ deadline }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const ms = Math.max(0, new Date(deadline) - now)
+  const p = (n) => String(n).padStart(2, '0')
+  const parts = [[Math.floor(ms / 864e5), 'd'], [Math.floor(ms / 36e5) % 24, 'h'], [Math.floor(ms / 6e4) % 60, 'min'], [Math.floor(ms / 1e3) % 60, 's']]
+  return (
+    <span className="countdown" role="timer" aria-label="Tempo até o fim das apostas">
+      {parts.map(([n, u]) => <span key={u}><b>{u === 'd' ? n : p(n)}</b><small>{u}</small></span>)}
+    </span>
+  )
 }
 
 async function cropToBlob(src, area) {
@@ -165,7 +174,7 @@ function Bets({ session, config, admin, toast }) {
   const [savedPicks, setSavedPicks] = useState({})
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [custom, setCustom] = useState({})
+  const [custom, setCustom] = useState(() => { try { return JSON.parse(localStorage.getItem('photos')) } catch { return null } })
   const [cropping, setCropping] = useState(null)
   const locked = config && new Date() >= new Date(config.deadline)
 
@@ -175,8 +184,12 @@ function Bets({ session, config, admin, toast }) {
       const p = Object.fromEntries((data ?? []).map((b) => [b.character_id, b.outcome]))
       setPicks(p); setSavedPicks(p); setLoaded(true)
     })
-    supabase.from('photos').select('character_id,path').then(({ data }) =>
-      setCustom(Object.fromEntries((data ?? []).map((p) => [p.character_id, p.path]))))
+    supabase.from('photos').select('character_id,path').then(({ data, error }) => {
+      if (error) return setCustom((c) => c ?? {})
+      const m = Object.fromEntries((data ?? []).map((p) => [p.character_id, p.path]))
+      setCustom(m)
+      try { localStorage.setItem('photos', JSON.stringify(m)) } catch { /* sem armazenamento */ }
+    })
   }, [uid, toast])
 
   const done = Object.keys(picks).length
@@ -222,22 +235,21 @@ function Bets({ session, config, admin, toast }) {
     if (up.error) { setCropping(null); return toast('Erro no envio: ' + up.error.message, 'err') }
     const row = await supabase.from('photos').upsert({ character_id: id, path, updated_at: new Date().toISOString() })
     if (row.error) { setCropping(null); return toast('Erro: ' + row.error.message, 'err') }
-    if (custom[id]) supabase.storage.from('cast').remove([custom[id]])
-    setCustom((c) => ({ ...c, [id]: path }))
+    if (custom?.[id]) supabase.storage.from('cast').remove([custom[id]])
+    setCustom((c) => { const m = { ...c, [id]: path }; try { localStorage.setItem('photos', JSON.stringify(m)) } catch { /* */ } return m })
     setCropping(null)
     toast('Foto atualizada.')
   }
 
   const body = CAST.filter((c) => savedPicks[c.id]).map((c) => `${savedPicks[c.id] === 'vive' ? 'VIVE ' : 'MORRE'} - ${c.name} (${c.actor})`).join('\n')
   const mailto = `mailto:${session.user.email}?subject=${encodeURIComponent('Minha aposta - Bolão Doomsday')}&body=${encodeURIComponent(body)}`
-  const left = config && timeLeft(config.deadline)
 
   return (
     <>
       <div className={`banner ${locked ? 'locked' : ''}`}>
         {locked
           ? <><LockSimple size={20} weight="bold" /> Apostas encerradas.</>
-          : <><Clock size={20} weight="bold" /> {left ? <>Fecha em <b>{left}</b></> : 'Carregando prazo…'}</>}
+          : <><Clock size={20} weight="bold" /> {config ? <>Fecha em <Countdown deadline={config.deadline} /></> : 'Carregando prazo…'}</>}
         <span className="rule">Marque quantos quiser. Personagens sem destino confirmado não contam.</span>
       </div>
 
@@ -247,7 +259,7 @@ function Bets({ session, config, admin, toast }) {
           return (
             <article key={c.id} className={`char ${v ?? ''}`}>
               <div className="photo">
-                <img src={photo(c.id, custom[c.id])} alt="" loading="lazy" />
+                {custom && <img src={photo(c.id, custom[c.id])} alt="" loading="lazy" />}
                 {v && <span className={`badge ${v}`} aria-hidden>{v === 'vive' ? <Heart size={18} weight="fill" /> : <Skull size={18} weight="fill" />}</span>}
                 {admin && (
                   <label className="upload" title="Trocar foto" aria-label={`Trocar foto de ${c.name}`}>
