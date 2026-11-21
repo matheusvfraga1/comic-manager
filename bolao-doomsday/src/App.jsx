@@ -1,5 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Heart, Skull, EnvelopeSimple, Camera, SignOut, Trophy, ListChecks, Eye, EyeSlash, FloppyDisk } from '@phosphor-icons/react'
+import { useCallback, useEffect, useState } from 'react'
+import Cropper from 'react-easy-crop'
+import {
+  Heart, Skull, EnvelopeSimple, Camera, SignOut, Trophy, ListChecks, Eye, EyeSlash,
+  FloppyDisk, X, Check, MagnifyingGlassMinus, MagnifyingGlassPlus, Clock, LockSimple, Medal,
+} from '@phosphor-icons/react'
 import { CAST } from './cast.js'
 import { supabase, configured } from './supabase.js'
 
@@ -8,97 +12,185 @@ const photo = (id, custom) => custom
   : `${import.meta.env.BASE_URL}cast/${id}.jpg?v=2`
 const logo = `${import.meta.env.BASE_URL}logo.jpg`
 
+/* ---------- utilidades ---------- */
+
+function useToast() {
+  const [toast, setToast] = useState(null)
+  useEffect(() => {
+    if (!toast || toast.sticky) return
+    const t = setTimeout(() => setToast(null), 3500)
+    return () => clearTimeout(t)
+  }, [toast])
+  const show = useCallback((text, kind = 'ok', sticky = false) => setToast({ text, kind, sticky, k: Date.now() }), [])
+  const node = toast && <div key={toast.k} className={`toast ${toast.kind}`} role="status">{toast.text}</div>
+  return [show, node]
+}
+
+function timeLeft(deadline) {
+  const ms = new Date(deadline) - Date.now()
+  if (ms <= 0) return null
+  const d = Math.floor(ms / 864e5), h = Math.floor(ms / 36e5) % 24, m = Math.floor(ms / 6e4) % 60
+  return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}min` : `${m}min`
+}
+
+async function cropToBlob(src, area) {
+  const img = await new Promise((ok, err) => { const i = new Image(); i.onload = () => ok(i); i.onerror = err; i.src = src })
+  const c = document.createElement('canvas')
+  c.width = 600; c.height = 800
+  c.getContext('2d').drawImage(img, area.x, area.y, area.width, area.height, 0, 0, 600, 800)
+  return new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.88))
+}
+
+/* ---------- login ---------- */
+
 function Login({ recovery, onDone }) {
   const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')
   const [show, setShow] = useState(false)
   const [mode, setMode] = useState(recovery ? 'new' : 'in')
   const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
+
   async function submit(e) {
     e.preventDefault()
-    setMsg('')
-    if (mode === 'forgot') {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })
-      return setMsg(error ? error.message : 'Enviamos um link para seu e-mail. Abra-o para criar nova senha.')
-    }
-    if (mode === 'new') {
-      const { error } = await supabase.auth.updateUser({ password: pass })
-      if (error) return setMsg(error.message)
-      return onDone()
-    }
-    if (mode === 'up') {
-      const { data, error } = await supabase.auth.signUp({ email, password: pass })
-      if (error) return setMsg(error.message)
-      if (data.session) return
-    }
-    const { error } = await supabase.auth.signInWithPassword({ email, password: pass })
-    if (error) setMsg(error.message === 'Email not confirmed' ? 'Confirme o e-mail (veja sua caixa de entrada) e entre.' : error.message)
+    setMsg(''); setBusy(true)
+    try {
+      if (mode === 'forgot') {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })
+        return setMsg(error ? traduz(error.message) : 'Link enviado. Abra seu e-mail para criar uma nova senha.')
+      }
+      if (mode === 'new') {
+        const { error } = await supabase.auth.updateUser({ password: pass })
+        return error ? setMsg(traduz(error.message)) : onDone()
+      }
+      if (mode === 'up') {
+        const { data, error } = await supabase.auth.signUp({ email, password: pass })
+        if (error) return setMsg(traduz(error.message))
+        if (data.session) return
+      }
+      const { error } = await supabase.auth.signInWithPassword({ email, password: pass })
+      if (error) setMsg(traduz(error.message))
+    } finally { setBusy(false) }
   }
+
   const titles = { in: 'Entrar', up: 'Criar conta', forgot: 'Enviar link', new: 'Salvar nova senha' }
   return (
-    <form className="card login" onSubmit={submit}>
-      <img src={logo} alt="Terra 616" className="logo" />
-      <h1>Bolão Doomsday</h1>
-      <p>Quem vive, quem morre?</p>
-      {mode !== 'new' && <input type="email" placeholder="e-mail" value={email} onChange={(e) => setEmail(e.target.value)} required />}
-      {mode !== 'forgot' && (
-        <div className="passwrap">
-          <input type={show ? 'text' : 'password'} placeholder={mode === 'new' ? 'nova senha (mín. 6)' : 'senha (mín. 6)'} minLength={6} value={pass} onChange={(e) => setPass(e.target.value)} required />
-          <button type="button" className="eye" aria-label={show ? 'Ocultar senha' : 'Ver senha'} onClick={() => setShow(!show)}>{show ? <EyeSlash size={20} /> : <Eye size={20} />}</button>
+    <main className="login">
+      <form className="panel" onSubmit={submit}>
+        <img src={logo} alt="Terra 616" className="logo" />
+        <h1>Bolão Doomsday</h1>
+        <p className="sub">{mode === 'forgot' ? 'Informe seu e-mail para redefinir a senha.' : mode === 'new' ? 'Escolha uma nova senha.' : 'Quem vive, quem morre?'}</p>
+        {mode !== 'new' && (
+          <label className="field"><span>E-mail</span>
+            <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </label>
+        )}
+        {mode !== 'forgot' && (
+          <label className="field"><span>{mode === 'new' ? 'Nova senha' : 'Senha'}</span>
+            <div className="passwrap">
+              <input type={show ? 'text' : 'password'} autoComplete={mode === 'in' ? 'current-password' : 'new-password'} minLength={6} value={pass} onChange={(e) => setPass(e.target.value)} required />
+              <button type="button" className="icon eye" aria-label={show ? 'Ocultar senha' : 'Ver senha'} onClick={() => setShow(!show)}>
+                {show ? <EyeSlash size={22} /> : <Eye size={22} />}
+              </button>
+            </div>
+          </label>
+        )}
+        {msg && <p className="msg" role="alert">{msg}</p>}
+        <button className="primary block" disabled={busy}>{busy ? 'Aguarde…' : titles[mode]}</button>
+        <div className="links">
+          {mode === 'in' && <button type="button" className="link" onClick={() => { setMode('forgot'); setMsg('') }}>Esqueci minha senha</button>}
+          {mode !== 'new' && (
+            <button type="button" className="link" onClick={() => { setMode(mode === 'in' ? 'up' : 'in'); setMsg('') }}>
+              {mode === 'in' ? 'Criar conta' : 'Já tenho conta'}
+            </button>
+          )}
         </div>
-      )}
-      <button className="primary">{titles[mode]}</button>
-      {mode === 'in' && <button type="button" className="link" onClick={() => setMode('forgot')}>Esqueci minha senha</button>}
-      {mode !== 'new' && (
-        <button type="button" className="link" onClick={() => setMode(mode === 'in' ? 'up' : 'in')}>
-          {mode === 'in' ? 'Não tenho conta' : 'Voltar para entrar'}
-        </button>
-      )}
-      {msg && <p className="msg">{msg}</p>}
-    </form>
+      </form>
+    </main>
   )
 }
 
-function Bets({ session, config, admin }) {
+function traduz(m) {
+  const t = {
+    'Invalid login credentials': 'E-mail ou senha incorretos.',
+    'Email not confirmed': 'Confirme seu e-mail antes de entrar.',
+    'User already registered': 'Este e-mail já tem conta. Use "Já tenho conta".',
+    'email rate limit exceeded': 'Muitas tentativas. Aguarde alguns minutos.',
+    'Password should be at least 6 characters.': 'A senha precisa de pelo menos 6 caracteres.',
+  }
+  return t[m] ?? m
+}
+
+/* ---------- recorte de foto ---------- */
+
+function CropModal({ file, onCancel, onDone }) {
+  const [src] = useState(() => URL.createObjectURL(file))
+  const [crop, setCrop] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(1)
+  const [area, setArea] = useState(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => () => URL.revokeObjectURL(src), [src])
+  useEffect(() => {
+    const esc = (e) => e.key === 'Escape' && onCancel()
+    addEventListener('keydown', esc)
+    return () => removeEventListener('keydown', esc)
+  }, [onCancel])
+
+  return (
+    <div className="modal" role="dialog" aria-modal="true" aria-label="Recortar foto">
+      <div className="cropbox">
+        <Cropper image={src} crop={crop} zoom={zoom} aspect={3 / 4} maxZoom={5}
+          onCropChange={setCrop} onZoomChange={setZoom} onCropComplete={(_, px) => setArea(px)} />
+      </div>
+      <div className="croptools">
+        <MagnifyingGlassMinus size={22} aria-hidden />
+        <input type="range" min={1} max={5} step={0.01} value={zoom} onChange={(e) => setZoom(+e.target.value)} aria-label="Zoom" />
+        <MagnifyingGlassPlus size={22} aria-hidden />
+      </div>
+      <div className="cropactions">
+        <button className="ghost" onClick={onCancel} disabled={busy}><X size={20} weight="bold" /> Cancelar</button>
+        <button className="primary" disabled={!area || busy} onClick={async () => { setBusy(true); await onDone(await cropToBlob(src, area)) }}>
+          <Check size={20} weight="bold" /> {busy ? 'Enviando…' : 'Usar foto'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ---------- apostas ---------- */
+
+function Bets({ session, config, admin, toast }) {
   const uid = session.user.id
   const [picks, setPicks] = useState({})
   const [savedPicks, setSavedPicks] = useState({})
-  const [status, setStatus] = useState('')
+  const [loaded, setLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [custom, setCustom] = useState({})
-
-  useEffect(() => {
-    supabase.from('photos').select('character_id,path').then(({ data }) =>
-      setCustom(Object.fromEntries((data ?? []).map((p) => [p.character_id, p.path]))))
-  }, [])
-
-  async function upload(id, file) {
-    if (!file) return
-    setStatus('Enviando foto...')
-    const path = `${id}-${Date.now()}.${(file.name.split('.').pop() || 'jpg').toLowerCase()}`
-    const up = await supabase.storage.from('cast').upload(path, file, { contentType: file.type })
-    if (up.error) return setStatus('Erro: ' + up.error.message)
-    const row = await supabase.from('photos').upsert({ character_id: id, path, updated_at: new Date().toISOString() })
-    if (row.error) return setStatus('Erro: ' + row.error.message)
-    if (custom[id]) supabase.storage.from('cast').remove([custom[id]])
-    setCustom((c) => ({ ...c, [id]: path }))
-    setStatus('Foto atualizada.')
-  }
+  const [cropping, setCropping] = useState(null)
   const locked = config && new Date() >= new Date(config.deadline)
 
   useEffect(() => {
-    supabase.from('bets').select('character_id,outcome').eq('user_id', uid).then(({ data }) => {
-      const p = {}
-      ;(data ?? []).forEach((b) => (p[b.character_id] = b.outcome))
-      setPicks(p)
-      setSavedPicks(p)
+    supabase.from('bets').select('character_id,outcome').eq('user_id', uid).then(({ data, error }) => {
+      if (error) toast('Não foi possível carregar sua aposta.', 'err')
+      const p = Object.fromEntries((data ?? []).map((b) => [b.character_id, b.outcome]))
+      setPicks(p); setSavedPicks(p); setLoaded(true)
     })
-  }, [uid])
+    supabase.from('photos').select('character_id,path').then(({ data }) =>
+      setCustom(Object.fromEntries((data ?? []).map((p) => [p.character_id, p.path]))))
+  }, [uid, toast])
 
   const done = Object.keys(picks).length
   const saved = Object.keys(savedPicks).length > 0
   const dirty = JSON.stringify(Object.entries(picks).sort()) !== JSON.stringify(Object.entries(savedPicks).sort())
-  const body = CAST.filter((c) => picks[c.id]).map((c) => `${picks[c.id] === 'vive' ? 'VIVE ' : 'MORRE'} - ${c.name} (${c.actor})`).join('\n')
-  const mailto = `mailto:${session.user.email}?subject=${encodeURIComponent('Minha aposta - Bolão Doomsday')}&body=${encodeURIComponent(body)}`
+  const lives = Object.values(picks).filter((v) => v === 'vive').length
+
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (e) => { e.preventDefault(); e.returnValue = '' }
+    addEventListener('beforeunload', warn)
+    return () => removeEventListener('beforeunload', warn)
+  }, [dirty])
+
   const set = (id, v) => !locked && setPicks((p) => {
     const n = { ...p }
     if (n[id] === v) delete n[id]
@@ -107,86 +199,142 @@ function Bets({ session, config, admin }) {
   })
 
   async function save() {
-    setStatus('Salvando...')
-    // só mexe no que mudou, para não perder apostas se algo falhar no meio
-    const changed = Object.keys(savedPicks).filter((id) => picks[id] !== savedPicks[id])
-    if (changed.length) {
-      const del = await supabase.from('bets').delete().eq('user_id', uid).in('character_id', changed)
-      if (del.error) return setStatus('Erro: ' + del.error.message)
-    }
-    const rows = Object.entries(picks).filter(([id, v]) => savedPicks[id] !== v).map(([character_id, outcome]) => ({ user_id: uid, character_id, outcome }))
-    if (rows.length) {
-      const ins = await supabase.from('bets').insert(rows)
-      if (ins.error) return setStatus('Erro: ' + ins.error.message + ' Tente salvar de novo.')
-    }
-    setSavedPicks({ ...picks })
-    setStatus('Aposta salva. Use "Enviar cópia por e-mail" abaixo.')
+    setSaving(true)
+    try {
+      const changed = Object.keys(savedPicks).filter((id) => picks[id] !== savedPicks[id])
+      if (changed.length) {
+        const del = await supabase.from('bets').delete().eq('user_id', uid).in('character_id', changed)
+        if (del.error) return toast('Erro ao salvar: ' + del.error.message, 'err')
+      }
+      const rows = Object.entries(picks).filter(([id, v]) => savedPicks[id] !== v).map(([character_id, outcome]) => ({ user_id: uid, character_id, outcome }))
+      if (rows.length) {
+        const ins = await supabase.from('bets').insert(rows)
+        if (ins.error) return toast('Erro ao salvar. Tente de novo.', 'err')
+      }
+      setSavedPicks({ ...picks })
+      toast('Aposta salva.')
+    } finally { setSaving(false) }
   }
+
+  async function upload(id, blob) {
+    const path = `${id}-${Date.now()}.jpg`
+    const up = await supabase.storage.from('cast').upload(path, blob, { contentType: 'image/jpeg' })
+    if (up.error) { setCropping(null); return toast('Erro no envio: ' + up.error.message, 'err') }
+    const row = await supabase.from('photos').upsert({ character_id: id, path, updated_at: new Date().toISOString() })
+    if (row.error) { setCropping(null); return toast('Erro: ' + row.error.message, 'err') }
+    if (custom[id]) supabase.storage.from('cast').remove([custom[id]])
+    setCustom((c) => ({ ...c, [id]: path }))
+    setCropping(null)
+    toast('Foto atualizada.')
+  }
+
+  const body = CAST.filter((c) => savedPicks[c.id]).map((c) => `${savedPicks[c.id] === 'vive' ? 'VIVE ' : 'MORRE'} - ${c.name} (${c.actor})`).join('\n')
+  const mailto = `mailto:${session.user.email}?subject=${encodeURIComponent('Minha aposta - Bolão Doomsday')}&body=${encodeURIComponent(body)}`
+  const left = config && timeLeft(config.deadline)
 
   return (
     <>
-      <p className="hint">
-        {locked ? 'Apostas encerradas.' : `Escolha quantos quiser.${config ? ` Prazo: ${new Date(config.deadline).toLocaleString('pt-BR')}.` : ''}`} Personagens sem destino confirmado não contam.
-      </p>
-      <div className="grid">
-        {CAST.map((c) => (
-          <div key={c.id} className={`char ${picks[c.id] ?? ''}`}>
-            <div className="photo">
-              <img src={photo(c.id, custom[c.id])} alt={c.name} loading="lazy" />
-              {admin && (
-                <label className="upload" title="Trocar foto">
-                  <Camera size={20} weight="bold" />
-                  <input type="file" accept="image/*" hidden onChange={(e) => { upload(c.id, e.target.files[0]); e.target.value = '' }} />
-                </label>
-              )}
-            </div>
-            <div className="info"><b>{c.name}</b><small>{c.actor}</small></div>
-            <div className="btns">
-              <button disabled={locked} className={picks[c.id] === 'vive' ? 'on live' : ''} onClick={() => set(c.id, 'vive')}><Heart size={18} weight="fill" /> Vive</button>
-              <button disabled={locked} className={picks[c.id] === 'morre' ? 'on die' : ''} onClick={() => set(c.id, 'morre')}><Skull size={18} weight="fill" /> Morre</button>
-            </div>
+      <div className={`banner ${locked ? 'locked' : ''}`}>
+        {locked
+          ? <><LockSimple size={20} weight="bold" /> Apostas encerradas.</>
+          : <><Clock size={20} weight="bold" /> {left ? <>Fecha em <b>{left}</b></> : 'Carregando prazo…'}</>}
+        <span className="rule">Marque quantos quiser. Personagens sem destino confirmado não contam.</span>
+      </div>
+
+      <div className="grid" aria-busy={!loaded}>
+        {CAST.map((c) => {
+          const v = picks[c.id]
+          return (
+            <article key={c.id} className={`char ${v ?? ''}`}>
+              <div className="photo">
+                <img src={photo(c.id, custom[c.id])} alt="" loading="lazy" />
+                {v && <span className={`badge ${v}`} aria-hidden>{v === 'vive' ? <Heart size={18} weight="fill" /> : <Skull size={18} weight="fill" />}</span>}
+                {admin && (
+                  <label className="upload" title="Trocar foto" aria-label={`Trocar foto de ${c.name}`}>
+                    <Camera size={22} weight="bold" />
+                    <input type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files[0]; e.target.value = ''; if (f) setCropping({ id: c.id, file: f }) }} />
+                  </label>
+                )}
+              </div>
+              <div className="info"><h3>{c.name}</h3><small>{c.actor}</small></div>
+              <div className="btns" role="group" aria-label={`Destino de ${c.name}`}>
+                <button disabled={locked} aria-pressed={v === 'vive'} className="live" onClick={() => set(c.id, 'vive')}>
+                  <Heart size={20} weight={v === 'vive' ? 'fill' : 'regular'} /> Vive
+                </button>
+                <button disabled={locked} aria-pressed={v === 'morre'} className="die" onClick={() => set(c.id, 'morre')}>
+                  <Skull size={20} weight={v === 'morre' ? 'fill' : 'regular'} /> Morre
+                </button>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+
+      <footer className="bar">
+        <div className="progress">
+          <div className="count"><b>{done}</b>/{CAST.length}
+            <span className="split"><Heart size={14} weight="fill" className="g" /> {lives} <Skull size={14} weight="fill" className="r" /> {done - lives}</span>
           </div>
-        ))}
-      </div>
-      <div className="bar">
-        <span>{done}/{CAST.length} apostas {dirty ? '· não salvo' : saved ? '· salvo' : ''}</span>
-        <span className="msg">{status}</span>
-        {saved && !dirty && <a className="mail" href={mailto} title="Enviar cópia por e-mail"><EnvelopeSimple size={22} /> Cópia</a>}
-        {!locked && <button className="primary" onClick={save} disabled={!dirty}><FloppyDisk size={18} weight="bold" /> Salvar</button>}
-      </div>
+          <div className="track"><div style={{ width: `${(done / CAST.length) * 100}%` }} /></div>
+          <small className={dirty ? 'warn' : ''}>{dirty ? 'Alterações não salvas' : saved ? 'Tudo salvo' : 'Nenhuma aposta ainda'}</small>
+        </div>
+        {saved && !dirty && <a className="icon mail" href={mailto} title="Enviar cópia por e-mail" aria-label="Enviar cópia por e-mail"><EnvelopeSimple size={24} /></a>}
+        {!locked && <button className="primary" onClick={save} disabled={!dirty || saving}><FloppyDisk size={20} weight="bold" /> {saving ? 'Salvando…' : 'Salvar'}</button>}
+      </footer>
+
+      {cropping && <CropModal file={cropping.file} onCancel={() => setCropping(null)} onDone={(blob) => upload(cropping.id, blob)} />}
     </>
   )
 }
 
-function Ranking({ config }) {
+/* ---------- ranking ---------- */
+
+function Ranking({ config, uid }) {
   const [rows, setRows] = useState(null)
+  const open = config && new Date() >= new Date(config.deadline)
   useEffect(() => {
+    if (!open) return
     (async () => {
-      const [b, r] = await Promise.all([
+      const [b, r, n] = await Promise.all([
         supabase.from('bets').select('user_id,character_id,outcome'),
         supabase.from('results').select('character_id,outcome'),
+        supabase.from('profiles').select('id,name'),
       ])
       const res = Object.fromEntries((r.data ?? []).map((x) => [x.character_id, x.outcome]))
+      const nm = Object.fromEntries((n.data ?? []).map((p) => [p.id, p.name]))
       const by = {}
       ;(b.data ?? []).forEach((x) => {
         const u = (by[x.user_id] ??= { hit: 0, valid: 0 })
         if (res[x.character_id]) { u.valid++; if (res[x.character_id] === x.outcome) u.hit++ }
       })
-      const names = await supabase.from('profiles').select('id,name')
-      const nm = Object.fromEntries((names.data ?? []).map((p) => [p.id, p.name]))
-      setRows(Object.entries(by).map(([id, u]) => ({ name: nm[id] ?? 'anônimo', ...u, pct: u.valid ? (u.hit / u.valid) * 100 : 0 })).sort((a, b) => b.pct - a.pct))
+      const list = Object.entries(by)
+        .map(([id, u]) => ({ id, name: nm[id] ?? 'anônimo', ...u, pct: u.valid ? (u.hit / u.valid) * 100 : 0 }))
+        .sort((a, b) => b.pct - a.pct || b.hit - a.hit)
+      list.forEach((x, i) => { x.pos = i && x.pct === list[i - 1].pct && x.hit === list[i - 1].hit ? list[i - 1].pos : i + 1 })
+      setRows({ list, resolved: Object.keys(res).length })
     })()
-  }, [])
-  const open = config && new Date() >= new Date(config.deadline)
-  if (!open) return <p className="hint">O ranking aparece depois do fim das apostas.</p>
-  if (!rows) return <p className="hint">Carregando...</p>
+  }, [open])
+
+  if (!config) return <p className="empty">Carregando…</p>
+  if (!open) return <p className="empty"><LockSimple size={28} /><br />O ranking abre quando as apostas fecharem.</p>
+  if (!rows) return <p className="empty">Carregando…</p>
+  if (!rows.resolved) return <p className="empty"><Clock size={28} /><br />Aguardando o resultado do filme.</p>
+  const medal = ['#f5c542', '#c0c7cf', '#cd7f32']
   return (
-    <table className="rank">
-      <thead><tr><th>#</th><th>Jogador</th><th>Acertos</th><th>%</th></tr></thead>
-      <tbody>{rows.map((r, i) => <tr key={i}><td>{i + 1}</td><td>{r.name}</td><td>{r.hit}/{r.valid}</td><td>{r.pct.toFixed(0)}%</td></tr>)}</tbody>
-    </table>
+    <ol className="rank">
+      {rows.list.map((r) => (
+        <li key={r.id} className={r.id === uid ? 'me' : ''}>
+          <span className="pos">{r.pos <= 3 ? <Medal size={24} weight="fill" color={medal[r.pos - 1]} /> : r.pos}</span>
+          <span className="who">{r.name}{r.id === uid && <small> (você)</small>}</span>
+          <span className="hits">{r.hit}/{r.valid}</span>
+          <b className="pct">{r.pct.toFixed(0)}%</b>
+        </li>
+      ))}
+    </ol>
   )
 }
+
+/* ---------- app ---------- */
 
 export default function App() {
   const [session, setSession] = useState(undefined)
@@ -194,6 +342,9 @@ export default function App() {
   const [tab, setTab] = useState('bets')
   const [recovery, setRecovery] = useState(false)
   const [admin, setAdmin] = useState(false)
+  const [toast, toastNode] = useToast()
+  const uid = session?.user?.id
+
   useEffect(() => {
     if (!configured) return
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -201,24 +352,26 @@ export default function App() {
     return () => data.subscription.unsubscribe()
   }, [])
   useEffect(() => {
-    if (session) supabase.from('config').select('deadline').single().then(({ data }) => setConfig(data))
-    if (session) supabase.from('admins').select('user_id').eq('user_id', session.user.id).then(({ data }) => setAdmin(Boolean(data?.length)))
-  }, [session?.user?.id])
+    if (!uid) return
+    supabase.from('config').select('deadline').single().then(({ data }) => setConfig(data))
+    supabase.from('admins').select('user_id').eq('user_id', uid).then(({ data }) => setAdmin(Boolean(data?.length)))
+  }, [uid])
 
-  if (!configured) return <div className="card login"><h1>Configure o Supabase</h1><p>Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.</p></div>
-  if (session === undefined) return null
+  if (!configured) return <main className="login"><div className="panel"><h1>Configure o Supabase</h1></div></main>
+  if (session === undefined) return <div className="splash"><img src={logo} alt="" /></div>
   if (!session || recovery) return <Login recovery={recovery} onDone={() => setRecovery(false)} />
   return (
     <div className="app">
-      <header>
-        <img src={logo} alt="" />
-        <nav>
-          <button className={tab === 'bets' ? 'on' : ''} onClick={() => setTab('bets')}><ListChecks size={18} /> Aposta</button>
-          <button className={tab === 'rank' ? 'on' : ''} onClick={() => setTab('rank')}><Trophy size={18} /> Ranking</button>
+      <header className="top">
+        <img src={logo} alt="Terra 616" />
+        <nav className="tabs" role="tablist">
+          <button role="tab" aria-selected={tab === 'bets'} onClick={() => setTab('bets')}><ListChecks size={20} /> Aposta</button>
+          <button role="tab" aria-selected={tab === 'rank'} onClick={() => setTab('rank')}><Trophy size={20} /> Ranking</button>
         </nav>
-        <button className="icon" title="Sair" aria-label="Sair" onClick={() => supabase.auth.signOut()}><SignOut size={22} /></button>
+        <button className="icon" title="Sair" aria-label="Sair" onClick={() => supabase.auth.signOut()}><SignOut size={24} /></button>
       </header>
-      {tab === 'bets' ? <Bets session={session} config={config} admin={admin} /> : <Ranking config={config} />}
+      {tab === 'bets' ? <Bets session={session} config={config} admin={admin} toast={toast} /> : <Ranking config={config} uid={uid} />}
+      {toastNode}
     </div>
   )
 }
