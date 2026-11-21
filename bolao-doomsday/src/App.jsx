@@ -83,6 +83,7 @@ async function cropToBlob(src, area) {
 
 function Login({ recovery, onDone }) {
   const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
   const [pass, setPass] = useState('')
   const [show, setShow] = useState(false)
   const [mode, setMode] = useState(recovery ? 'new' : 'in')
@@ -102,7 +103,7 @@ function Login({ recovery, onDone }) {
         return error ? setMsg(traduz(error.message)) : onDone()
       }
       if (mode === 'up') {
-        const { data, error } = await supabase.auth.signUp({ email, password: pass })
+        const { data, error } = await supabase.auth.signUp({ email, password: pass, options: { data: { name: name.trim() } } })
         if (error) return setMsg(traduz(error.message))
         if (data.session) return
       }
@@ -118,6 +119,11 @@ function Login({ recovery, onDone }) {
         <img src={logo} alt="Terra 616" className="logo" />
         <h1>Bolão Doomsday</h1>
         <p className="sub">{mode === 'forgot' ? 'Informe seu e-mail para redefinir a senha.' : mode === 'new' ? 'Escolha uma nova senha.' : 'Quem vive, quem morre?'}</p>
+        {mode === 'up' && (
+          <label className="field"><span>Seu nome (aparece no ranking)</span>
+            <input type="text" autoComplete="name" maxLength={30} value={name} onChange={(e) => setName(e.target.value)} required />
+          </label>
+        )}
         {mode !== 'new' && (
           <label className="field"><span>E-mail</span>
             <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
@@ -191,6 +197,28 @@ function CropModal({ file, onCancel, onDone }) {
           <Check size={20} weight="bold" /> {busy ? 'Enviando…' : 'Usar foto'}
         </button>
       </div>
+    </div>
+  )
+}
+
+/* ---------- nome do participante ---------- */
+
+function NameModal({ initial, required, onCancel, onSave }) {
+  const [name, setName] = useState(initial)
+  const [busy, setBusy] = useState(false)
+  return (
+    <div className="modal center" role="dialog" aria-modal="true" aria-label="Seu nome">
+      <form className="panel" onSubmit={async (e) => { e.preventDefault(); setBusy(true); await onSave(name.trim()); setBusy(false) }}>
+        <h1>Seu nome</h1>
+        <p className="sub">É assim que você aparece no ranking.</p>
+        <label className="field"><span>Nome</span>
+          <input type="text" autoComplete="name" maxLength={30} value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+        </label>
+        <div className={required ? '' : 'cropactions bare'}>
+          {!required && <button type="button" className="ghost" onClick={onCancel} disabled={busy}><X size={20} weight="bold" /> Cancelar</button>}
+          <button className={`primary ${required ? 'block' : ''}`} disabled={busy || !name.trim()}><Check size={20} weight="bold" /> {busy ? 'Salvando…' : 'Salvar'}</button>
+        </div>
+      </form>
     </div>
   )
 }
@@ -460,6 +488,8 @@ export default function App() {
   const [tab, setTab] = useState('bets')
   const [recovery, setRecovery] = useState(false)
   const [admin, setAdmin] = useState(false)
+  const [name, setName] = useState(null)
+  const [editName, setEditName] = useState(false)
   const [toast, toastNode] = useToast()
   const uid = session?.user?.id
   const closed = useClosed(config?.deadline)
@@ -474,7 +504,22 @@ export default function App() {
     if (!uid) return
     supabase.from('config').select('deadline').single().then(({ data }) => setConfig(data))
     supabase.from('admins').select('user_id').eq('user_id', uid).then(({ data }) => setAdmin(Boolean(data?.length)))
+    supabase.from('profiles').select('name').eq('id', uid).maybeSingle().then(({ data }) => {
+      const meta = session.user.user_metadata?.name
+      setName(meta ?? data?.name ?? '')
+      if (meta && meta !== data?.name) supabase.from('profiles').upsert({ id: uid, name: meta }).then(() => {})
+    })
   }, [uid])
+
+  async function saveName(n) {
+    const { error } = await supabase.auth.updateUser({ data: { name: n } })
+    if (error) return toast('Não foi possível salvar o nome.', 'err')
+    await supabase.from('profiles').upsert({ id: uid, name: n })
+    setName(n); setEditName(false)
+    toast('Nome salvo.')
+  }
+  // quem entrou antes de existir o campo de nome precisa escolher um
+  const needName = session && name !== null && !session.user.user_metadata?.name
 
   if (!configured) return <main className="login"><div className="panel"><h1>Configure o Supabase</h1></div></main>
   if (session === undefined) return <div className="splash"><img src={logo} alt="" /></div>
@@ -487,9 +532,18 @@ export default function App() {
           <button role="tab" aria-selected={tab === 'bets'} onClick={() => setTab('bets')}><ListChecks size={20} /> Aposta</button>
           <button role="tab" aria-selected={tab === 'rank'} onClick={() => setTab('rank')}><Trophy size={20} /> Ranking</button>
         </nav>
+        <button className="icon me" title="Seu nome" aria-label={`Seu nome: ${name ?? ''}`} onClick={() => setEditName(true)}><UserCircle size={26} /></button>
         <button className="icon" title="Sair" aria-label="Sair" onClick={() => supabase.auth.signOut()}><SignOut size={24} /></button>
       </header>
       {tab === 'bets' ? <Bets session={session} config={config} locked={closed} admin={admin} toast={toast} /> : <Ranking config={config} open={closed} uid={uid} />}
+      {(needName || editName) && (
+        <NameModal
+          initial={session.user.user_metadata?.name ?? (name && name !== session.user.email.split('@')[0] ? name : '')}
+          required={needName}
+          onCancel={() => setEditName(false)}
+          onSave={saveName}
+        />
+      )}
       {toastNode}
     </div>
   )
