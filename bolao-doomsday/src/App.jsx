@@ -5,30 +5,51 @@ import { supabase, configured } from './supabase.js'
 const photo = (id) => `${import.meta.env.BASE_URL}cast/${id}.jpg`
 const logo = `${import.meta.env.BASE_URL}logo.jpg`
 
-function Login() {
+function Login({ recovery }) {
   const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')
-  const [mode, setMode] = useState('in')
+  const [show, setShow] = useState(false)
+  const [mode, setMode] = useState(recovery ? 'new' : 'in')
   const [msg, setMsg] = useState('')
   async function submit(e) {
     e.preventDefault()
     setMsg('')
-    const fn = mode === 'in' ? 'signInWithPassword' : 'signUp'
-    const { error } = await supabase.auth[fn]({ email, password: pass })
-    if (error) setMsg(error.message)
-    else if (mode === 'up') setMsg('Conta criada. Se pedir, confirme no e-mail e entre.')
+    if (mode === 'forgot') {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })
+      return setMsg(error ? error.message : 'Enviamos um link para seu e-mail. Abra-o para criar nova senha.')
+    }
+    if (mode === 'new') {
+      const { error } = await supabase.auth.updateUser({ password: pass })
+      return setMsg(error ? error.message : 'Senha alterada!')
+    }
+    if (mode === 'up') {
+      const { data, error } = await supabase.auth.signUp({ email, password: pass })
+      if (error) return setMsg(error.message)
+      if (data.session) return
+    }
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pass })
+    if (error) setMsg(error.message === 'Email not confirmed' ? 'Confirme o e-mail (veja sua caixa de entrada) e entre.' : error.message)
   }
+  const titles = { in: 'Entrar', up: 'Criar conta', forgot: 'Enviar link', new: 'Salvar nova senha' }
   return (
     <form className="card login" onSubmit={submit}>
       <img src={logo} alt="Terra 616" className="logo" />
       <h1>Bolão Doomsday</h1>
       <p>Quem vive, quem morre?</p>
-      <input type="email" placeholder="e-mail" value={email} onChange={(e) => setEmail(e.target.value)} required />
-      <input type="password" placeholder="senha (mín. 6)" minLength={6} value={pass} onChange={(e) => setPass(e.target.value)} required />
-      <button className="primary">{mode === 'in' ? 'Entrar' : 'Criar conta'}</button>
-      <button type="button" className="link" onClick={() => setMode(mode === 'in' ? 'up' : 'in')}>
-        {mode === 'in' ? 'Não tenho conta' : 'Já tenho conta'}
-      </button>
+      {mode !== 'new' && <input type="email" placeholder="e-mail" value={email} onChange={(e) => setEmail(e.target.value)} required />}
+      {mode !== 'forgot' && (
+        <div className="passwrap">
+          <input type={show ? 'text' : 'password'} placeholder={mode === 'new' ? 'nova senha (mín. 6)' : 'senha (mín. 6)'} minLength={6} value={pass} onChange={(e) => setPass(e.target.value)} required />
+          <button type="button" className="eye" onClick={() => setShow(!show)}>{show ? 'Ocultar' : 'Ver'}</button>
+        </div>
+      )}
+      <button className="primary">{titles[mode]}</button>
+      {mode === 'in' && <button type="button" className="link" onClick={() => setMode('forgot')}>Esqueci minha senha</button>}
+      {mode !== 'new' && (
+        <button type="button" className="link" onClick={() => setMode(mode === 'in' ? 'up' : 'in')}>
+          {mode === 'in' ? 'Não tenho conta' : 'Voltar para entrar'}
+        </button>
+      )}
       {msg && <p className="msg">{msg}</p>}
     </form>
   )
@@ -127,10 +148,11 @@ export default function App() {
   const [session, setSession] = useState(undefined)
   const [config, setConfig] = useState(null)
   const [tab, setTab] = useState('bets')
+  const [recovery, setRecovery] = useState(false)
   useEffect(() => {
     if (!configured) return
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
+    const { data } = supabase.auth.onAuthStateChange((e, s) => { setSession(s); if (e === 'PASSWORD_RECOVERY') setRecovery(true) })
     return () => data.subscription.unsubscribe()
   }, [])
   useEffect(() => {
@@ -139,7 +161,7 @@ export default function App() {
 
   if (!configured) return <div className="card login"><h1>Configure o Supabase</h1><p>Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.</p></div>
   if (session === undefined) return null
-  if (!session) return <Login />
+  if (!session || recovery) return <Login recovery={recovery} />
   return (
     <div className="app">
       <header>
