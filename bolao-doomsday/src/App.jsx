@@ -38,6 +38,18 @@ function VoteBar({ vive, morre }) {
   )
 }
 
+// true depois do prazo; atualiza sozinho quando o prazo chega com a página aberta
+function useClosed(deadline) {
+  const [now, setNow] = useState(Date.now())
+  const end = deadline ? new Date(deadline).getTime() : null
+  useEffect(() => {
+    if (end == null || now >= end) return
+    const t = setTimeout(() => setNow(Date.now()), Math.min(end - now + 50, 2 ** 31 - 1))
+    return () => clearTimeout(t)
+  }, [end, now])
+  return end != null && now >= end
+}
+
 function Countdown({ deadline }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -180,7 +192,7 @@ function CropModal({ file, onCancel, onDone }) {
 
 /* ---------- apostas ---------- */
 
-function Bets({ session, config, admin, toast }) {
+function Bets({ session, config, locked, admin, toast }) {
   const uid = session.user.id
   const [picks, setPicks] = useState({})
   const [savedPicks, setSavedPicks] = useState({})
@@ -189,7 +201,6 @@ function Bets({ session, config, admin, toast }) {
   const [custom, setCustom] = useState(() => { try { return JSON.parse(localStorage.getItem('photos')) } catch { return null } })
   const [cropping, setCropping] = useState(null)
   const [stats, setStats] = useState({})
-  const locked = config && new Date() >= new Date(config.deadline)
 
   useEffect(() => {
     supabase.from('bets').select('character_id,outcome').eq('user_id', uid).then(({ data, error }) => {
@@ -322,9 +333,8 @@ function Bets({ session, config, admin, toast }) {
 
 /* ---------- ranking ---------- */
 
-function Ranking({ config, uid }) {
+function Ranking({ config, open, uid }) {
   const [rows, setRows] = useState(null)
-  const open = config && new Date() >= new Date(config.deadline)
   useEffect(() => {
     if (!open) return
     (async () => {
@@ -377,6 +387,7 @@ export default function App() {
   const [admin, setAdmin] = useState(false)
   const [toast, toastNode] = useToast()
   const uid = session?.user?.id
+  const closed = useClosed(config?.deadline)
 
   useEffect(() => {
     if (!configured) return
@@ -403,7 +414,7 @@ export default function App() {
         </nav>
         <button className="icon" title="Sair" aria-label="Sair" onClick={() => supabase.auth.signOut()}><SignOut size={24} /></button>
       </header>
-      {tab === 'bets' ? <Bets session={session} config={config} admin={admin} toast={toast} /> : <Ranking config={config} uid={uid} />}
+      {tab === 'bets' ? <Bets session={session} config={config} locked={closed} admin={admin} toast={toast} /> : <Ranking config={config} open={closed} uid={uid} />}
       {toastNode}
     </div>
   )
