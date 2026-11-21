@@ -3,13 +3,18 @@ import Cropper from 'react-easy-crop'
 import {
   Heart, Skull, EnvelopeSimple, Camera, SignOut, Trophy, ListChecks, Eye, EyeSlash,
   FloppyDisk, X, Check, MagnifyingGlassMinus, MagnifyingGlassPlus, Clock, LockSimple, Medal,
+  Plus, Trash, UserCircle,
 } from '@phosphor-icons/react'
 import { CAST } from './cast.js'
 import { supabase, configured } from './supabase.js'
 
+const STATIC = new Set(CAST.map((c) => c.id))
 const photo = (id, custom) => custom
   ? supabase.storage.from('cast').getPublicUrl(custom).data.publicUrl
-  : `${import.meta.env.BASE_URL}cast/${id}.jpg?v=2`
+  : STATIC.has(id) ? `${import.meta.env.BASE_URL}cast/${id}.jpg?v=2` : null
+const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k)) } catch { return null } }
+const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch { /* sem armazenamento */ } }
+const slug = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 24) || 'p'
 const logo = `${import.meta.env.BASE_URL}logo.jpg`
 
 /* ---------- utilidades ---------- */
@@ -190,6 +195,36 @@ function CropModal({ file, onCancel, onDone }) {
   )
 }
 
+/* ---------- novo personagem ---------- */
+
+function AddModal({ onCancel, onSave }) {
+  const [name, setName] = useState('')
+  const [actor, setActor] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    const esc = (e) => e.key === 'Escape' && onCancel()
+    addEventListener('keydown', esc)
+    return () => removeEventListener('keydown', esc)
+  }, [onCancel])
+  return (
+    <div className="modal center" role="dialog" aria-modal="true" aria-label="Novo personagem">
+      <form className="panel" onSubmit={async (e) => { e.preventDefault(); setBusy(true); await onSave(name.trim(), actor.trim()); setBusy(false) }}>
+        <h1>Novo personagem</h1>
+        <label className="field"><span>Personagem</span>
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+        </label>
+        <label className="field"><span>Ator / atriz</span>
+          <input type="text" value={actor} onChange={(e) => setActor(e.target.value)} />
+        </label>
+        <div className="cropactions bare">
+          <button type="button" className="ghost" onClick={onCancel} disabled={busy}><X size={20} weight="bold" /> Cancelar</button>
+          <button className="primary" disabled={busy || !name.trim()}><Check size={20} weight="bold" /> {busy ? 'Salvando…' : 'Adicionar'}</button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
 /* ---------- apostas ---------- */
 
 function Bets({ session, config, locked, admin, toast }) {
@@ -198,7 +233,9 @@ function Bets({ session, config, locked, admin, toast }) {
   const [savedPicks, setSavedPicks] = useState({})
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [custom, setCustom] = useState(() => { try { return JSON.parse(localStorage.getItem('photos')) } catch { return null } })
+  const [custom, setCustom] = useState(() => readLS('photos'))
+  const [cast, setCast] = useState(() => readLS('cast') ?? CAST)
+  const [adding, setAdding] = useState(false)
   const [cropping, setCropping] = useState(null)
   const [stats, setStats] = useState({})
 
@@ -209,11 +246,14 @@ function Bets({ session, config, locked, admin, toast }) {
       setPicks(p); setSavedPicks(p); setLoaded(true)
     })
     loadStats()
+    supabase.from('characters').select('id,name,actor,sort').order('sort').then(({ data, error }) => {
+      if (error || !data?.length) return // tabela ainda não criada: usa a lista fixa
+      setCast(data); writeLS('cast', data)
+    })
     supabase.from('photos').select('character_id,path').then(({ data, error }) => {
       if (error) return setCustom((c) => c ?? {})
       const m = Object.fromEntries((data ?? []).map((p) => [p.character_id, p.path]))
-      setCustom(m)
-      try { localStorage.setItem('photos', JSON.stringify(m)) } catch { /* sem armazenamento */ }
+      setCustom(m); writeLS('photos', m)
     })
   }, [uid, toast])
 
@@ -222,10 +262,11 @@ function Bets({ session, config, locked, admin, toast }) {
     setStats(Object.fromEntries((data ?? []).map((r) => [r.character_id, r])))
   }
 
-  const done = Object.keys(picks).length
-  const saved = Object.keys(savedPicks).length > 0
+  const mine = cast.filter((c) => picks[c.id])
+  const done = mine.length
+  const saved = cast.some((c) => savedPicks[c.id])
   const dirty = JSON.stringify(Object.entries(picks).sort()) !== JSON.stringify(Object.entries(savedPicks).sort())
-  const lives = Object.values(picks).filter((v) => v === 'vive').length
+  const lives = mine.filter((c) => picks[c.id] === 'vive').length
 
   useEffect(() => {
     if (!dirty) return
@@ -267,12 +308,34 @@ function Bets({ session, config, locked, admin, toast }) {
     const row = await supabase.from('photos').upsert({ character_id: id, path, updated_at: new Date().toISOString() })
     if (row.error) { setCropping(null); return toast('Erro: ' + row.error.message, 'err') }
     if (custom?.[id]) supabase.storage.from('cast').remove([custom[id]])
-    setCustom((c) => { const m = { ...c, [id]: path }; try { localStorage.setItem('photos', JSON.stringify(m)) } catch { /* */ } return m })
+    setCustom((c) => { const m = { ...c, [id]: path }; writeLS('photos', m); return m })
     setCropping(null)
     toast('Foto atualizada.')
   }
 
-  const body = CAST.filter((c) => savedPicks[c.id]).map((c) => `${savedPicks[c.id] === 'vive' ? 'VIVE ' : 'MORRE'} - ${c.name} (${c.actor})`).join('\n')
+  async function addChar(name, actor) {
+    const id = `${slug(name)}-${Date.now().toString(36)}`
+    const sort = Math.max(0, ...cast.map((c) => c.sort ?? 0)) + 10
+    const { data, error } = await supabase.from('characters').insert({ id, name, actor, sort }).select('id,name,actor,sort').single()
+    if (error) return toast(/characters/.test(error.message) ? 'Rode o SQL 0004_personagens.sql no Supabase primeiro.' : 'Erro: ' + error.message, 'err')
+    setCast((l) => { const n = [...l, data]; writeLS('cast', n); return n })
+    setAdding(false)
+    toast('Adicionado. Use a câmera para pôr a foto.')
+  }
+
+  async function removeChar(c) {
+    if (!confirm(`Remover ${c.name} do bolão?`)) return
+    const { data, error } = await supabase.from('characters').delete().eq('id', c.id).select('id')
+    if (error || !data?.length) return toast(error ? 'Erro: ' + error.message : 'Rode o SQL 0004_personagens.sql no Supabase primeiro.', 'err')
+    if (custom?.[c.id]) {
+      supabase.from('photos').delete().eq('character_id', c.id).then(() => {})
+      supabase.storage.from('cast').remove([custom[c.id]])
+    }
+    setCast((l) => { const n = l.filter((x) => x.id !== c.id); writeLS('cast', n); return n })
+    toast(`${c.name} removido.`)
+  }
+
+  const body = cast.filter((c) => savedPicks[c.id]).map((c) => `${savedPicks[c.id] === 'vive' ? 'VIVE ' : 'MORRE'} - ${c.name} (${c.actor})`).join('\n')
   const mailto = `mailto:${session.user.email}?subject=${encodeURIComponent('Minha aposta - Bolão Doomsday')}&body=${encodeURIComponent(body)}`
 
   return (
@@ -285,12 +348,13 @@ function Bets({ session, config, locked, admin, toast }) {
       </div>
 
       <div className="grid" aria-busy={!loaded}>
-        {CAST.map((c) => {
+        {cast.map((c) => {
           const v = picks[c.id]
+          const src = custom && photo(c.id, custom[c.id])
           return (
             <article key={c.id} className={`char ${v ?? ''}`}>
               <div className="photo">
-                {custom && <img src={photo(c.id, custom[c.id])} alt="" loading="lazy" />}
+                {src ? <img src={src} alt="" loading="lazy" /> : custom && <UserCircle className="nophoto" size={72} weight="thin" aria-hidden />}
                 {v && <span className={`badge ${v}`} aria-hidden>{v === 'vive' ? <Heart size={18} weight="fill" /> : <Skull size={18} weight="fill" />}</span>}
                 {stats[c.id] && <VoteBar {...stats[c.id]} />}
                 {admin && (
@@ -298,6 +362,11 @@ function Bets({ session, config, locked, admin, toast }) {
                     <Camera size={22} weight="bold" />
                     <input type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files[0]; e.target.value = ''; if (f) setCropping({ id: c.id, file: f }) }} />
                   </label>
+                )}
+                {admin && !locked && (
+                  <button className="remove" title="Remover personagem" aria-label={`Remover ${c.name}`} onClick={() => removeChar(c)}>
+                    <Trash size={20} weight="bold" />
+                  </button>
                 )}
               </div>
               <div className="info"><h3>{c.name}</h3><small>{c.actor}</small></div>
@@ -312,20 +381,26 @@ function Bets({ session, config, locked, admin, toast }) {
             </article>
           )
         })}
+        {admin && !locked && (
+          <button className="char addchar" onClick={() => setAdding(true)}>
+            <Plus size={40} weight="bold" /> Adicionar personagem
+          </button>
+        )}
       </div>
 
       <footer className="bar">
         <div className="progress">
-          <div className="count"><b>{done}</b>/{CAST.length}
+          <div className="count"><b>{done}</b>/{cast.length}
             <span className="split"><Heart size={14} weight="fill" className="g" /> {lives} <Skull size={14} weight="fill" className="r" /> {done - lives}</span>
           </div>
-          <div className="track"><div style={{ width: `${(done / CAST.length) * 100}%` }} /></div>
+          <div className="track"><div style={{ width: `${cast.length ? (done / cast.length) * 100 : 0}%` }} /></div>
           <small className={dirty ? 'warn' : ''}>{dirty ? 'Alterações não salvas' : saved ? 'Tudo salvo' : 'Nenhuma aposta ainda'}</small>
         </div>
         {saved && !dirty && <a className="icon mail" href={mailto} title="Enviar cópia por e-mail" aria-label="Enviar cópia por e-mail"><EnvelopeSimple size={24} /></a>}
         {!locked && <button className="primary" onClick={save} disabled={!dirty || saving}><FloppyDisk size={20} weight="bold" /> {saving ? 'Salvando…' : 'Salvar'}</button>}
       </footer>
 
+      {adding && <AddModal onCancel={() => setAdding(false)} onSave={addChar} />}
       {cropping && <CropModal file={cropping.file} onCancel={() => setCropping(null)} onDone={(blob) => upload(cropping.id, blob)} />}
     </>
   )
